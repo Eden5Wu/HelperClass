@@ -42,7 +42,7 @@ const DEVART_MSSQL_CONNECTION_STRING = ''
 const MSSQL_CONNECTION_STRING = ''
   +'%s=MSSQL;%s=%s;%s=%s;%s=%s;%s=%s'
   +';SchemaOverride=%%.dbo;BlobSize=-1;ErrorResourceFile=;LocaleCode=0000'
-  +';IsolationLevel=ReadCommitted;OS Authentication=False;Prepare SQL=False'
+  +';IsolationLevel=ReadCommitted;OS Authentication=False;Prepare SQL=True'
   +';ConnectTimeout=60;Mars_Connection=False';
 
 { Factory }
@@ -133,23 +133,23 @@ begin
     //if not LDBXCmd.IsPrepared then
       LDBXCmd.Prepare;
     LIsCreated := LDBXCmd.Parameters.Count > 0;
-    //FCommand.Parameters.SetCount((VarArrayHighBound(args, 1) + 1));
+    //FCommand.Parameters.SetCount((VarArrayHighBound(args, 1) + 1)); // Only set, but it's null!
     if not(VarIsNull(args)) and not(VarIsEmpty(args)) then
       for LParamPos := 0 to (VarArrayHighBound(args, 1)) do
       begin
-        if LIsCreated then
-          LParam := LDBXCmd.Parameters[LParamPos]
+        if not LIsCreated then
+          LParam := LDBXCmd.CreateParameter
         else
-          LParam := LDBXCmd.CreateParameter;
+          LParam := LDBXCmd.Parameters[LParamPos];
         case VarType(args[LParamPos]) and VarTypeMask of  {$REGION 'begin..end'}
           varInteger:
             begin
-              LParam.DataType := TDBXDataTypes.Int16Type;
+              LParam.DataType := TDBXDataTypes.Int32Type;
               LParam.Value.AsInt32 := args[LParamPos];
             end;
           varOleStr, varString, varUString:
             begin
-              LParam.DataType := TDBXDataTypes.AnsiStringType;
+              LParam.DataType := TDBXDataTypes.WideStringType;
               LParam.Value.AsString := args[LParamPos];
             end;
           varBoolean:
@@ -200,7 +200,8 @@ begin
         else
           raise Exception.Create('Invalid Type');
         end;{$ENDREGION}
-        LDBXCmd.Parameters.AddParameter(LParam);
+        if not LIsCreated then
+          LDBXCmd.Parameters.AddParameter(LParam);
       end;
     LDBXCmd.ExecuteUpdate;
     Result := LDBXCmd.RowsAffected;
@@ -226,6 +227,7 @@ var
   LDBXCmd: TDBXCommand;
   LParam: TDBXParameter;
   LParamPos: Integer;
+  LIsCreated: Boolean;
 begin
   Result := nil;
   LDBXCmd := GetConnection.CreateCommand;
@@ -233,19 +235,23 @@ begin
     try
       LDBXCmd.Text := ASQL;
       LDBXCmd.Prepare;
+      LIsCreated := LDBXCmd.Parameters.Count > 0;
       if not(VarIsNull(args)) and not(VarIsEmpty(args)) then
         for LParamPos := 0 to (VarArrayHighBound(args, 1)) do
         begin
-          LParam := LDBXCmd.CreateParameter;
+          if not LIsCreated then
+            LParam := LDBXCmd.CreateParameter
+          else
+            LParam := LDBXCmd.Parameters[LParamPos];
           case VarType(args[LParamPos]) and VarTypeMask of {$REGION 'begin..end'}
             varInteger:
               begin
-                LParam.DataType := TDBXDataTypes.Int16Type;
+                LParam.DataType := TDBXDataTypes.Int32Type;
                 LParam.Value.AsInt32 := args[LParamPos];
               end;
             varOleStr, varString, varUString:
               begin
-                LParam.DataType := TDBXDataTypes.AnsiStringType;
+                LParam.DataType := TDBXDataTypes.WideStringType;
                 LParam.Value.AsString := args[LParamPos];
               end;
             varBoolean:
@@ -296,7 +302,8 @@ begin
           else
             raise Exception.Create('Invalid Type');
           end;{$ENDREGION}
-          LDBXCmd.Parameters.AddParameter(LParam);
+          if not LIsCreated then
+            LDBXCmd.Parameters.AddParameter(LParam);
         end;
         Result := LDBXCmd;
     finally
