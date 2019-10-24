@@ -23,7 +23,6 @@ type
     function Execute(ASQLCommand: TDBXCommand): Int64; overload;
     function Execute(ASQLCommand: TDBXCommand; args: OleVariant): Int64; overload;
     function ExecuteQuery(ASQLCommand: TDBXCommand): TDBXReader; overload;
-    function ExecuteQuery(ASQL: string; args: OleVariant): TDBXReader; overload;
     function ExecuteQuery(ASQLCommand: TDBXCommand; args: OleVariant): TDBXReader; overload;
     function Prepare(ASQL: string): TDBXCommand;
     property ConnectionProps: TDBXProperties read FConnectionProps;
@@ -235,22 +234,6 @@ begin
     ASQLCommand.Prepare;
   FillParams(ASQLCommand, args);
   Result := ASQLCommand.ExecuteQuery;
-end;
-
-function TDBXMSSQLFactory.ExecuteQuery(ASQL: string;
-  args: OleVariant): TDBXReader;
-var
-  LDBXCmd: TDBXCommand;
-begin
-  try
-    LDBXCmd := GetConnection.CreateCommand;
-    LDBXCmd.CommandType := TDBXCommandTypes.DbxSQL;
-    LDBXCmd.Text := ASQL;
-    LDBXCmd.Prepare;
-    Result := Self.ExecuteQuery(LDBXCmd, args);
-  finally
-    FreeAndNil(LDBXCmd);
-  end;
 end;
 
 end.
