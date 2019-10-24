@@ -25,6 +25,7 @@ type
     function ExecuteQuery(ASQLCommand: TDBXCommand): TDBXReader; overload;
     function ExecuteQuery(ASQLCommand: TDBXCommand; args: OleVariant): TDBXReader; overload;
     function Prepare(ASQL: string): TDBXCommand;
+    function PrepareMSQuery(ASQL: string): TDBXCommand;
     property ConnectionProps: TDBXProperties read FConnectionProps;
   end;
 
@@ -45,8 +46,11 @@ const MSSQL_CONNECTION_STRING = ''
   +';SchemaOverride=%%.dbo;BlobSize=-1;ErrorResourceFile=;LocaleCode=0000'
   +';IsolationLevel=ReadCommitted;OS Authentication=False;Prepare SQL=True'
   +';ConnectTimeout=60;Mars_Connection=False';
+
 /// <summary> fixed: Cursor not returned from Query </summary>
 const SET_NOCOUNT_ON = 'SET NOCOUNT ON;'#13#10;
+const SET_READ_UNCOMMITTED = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'#13#10;
+const SET_MSQUERY_HEAD = SET_NOCOUNT_ON+SET_READ_UNCOMMITTED;
 
 procedure FillParams(ASQLCommand: TDBXCommand; args: OleVariant);
 var
@@ -138,13 +142,18 @@ var
 begin
   Cmd := GetConnection.CreateCommand;
   try
-    Cmd.Text := SET_NOCOUNT_ON + ASQL; // fixed: Cursor not returned from Query
+    Cmd.Text := ASQL;
     Cmd.Prepare;
   except
     FreeAndNil(Cmd);
     raise;
   end;
   Result := Cmd;
+end;
+
+function TDBXMSSQLFactory.PrepareMSQuery(ASQL: string): TDBXCommand;
+begin
+  Result := Prepare(SET_MSQUERY_HEAD + ASQL); // fixed: Cursor not returned from Query
 end;
 
 constructor TDBXMSSQLFactory.Create(const AHostName, ADatabase, AUserName,
@@ -193,7 +202,6 @@ function TDBXMSSQLFactory.Execute(ASQL: string; args: OleVariant): Int64;
 var
   LDBXCmd: TDBXCommand;
 begin
-  Result := -1;
   try
     LDBXCmd := GetConnection.CreateCommand;
     LDBXCmd.CommandType := TDBXCommandTypes.DbxSQL;
