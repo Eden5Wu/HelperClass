@@ -182,12 +182,12 @@ end;
 
 destructor TDBXMSSQLFactory.Destroy;
 begin
-  FConnectionProps.Free;
+  FreeAndNil(FConnectionProps);
   if Assigned(FDBXConnection) then
   begin
     if FDBXConnection.IsOpen then
       FDBXConnection.Close;
-    FDBXConnection.Free;
+    FreeAndNil(FDBXConnection);
   end;
   inherited;
 end;
