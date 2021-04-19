@@ -11,6 +11,40 @@ type
     function ParseSQL(DoCreate: Boolean): string;
   end;
 
+  TDBXParameterListHelper = class helper for TDBXParameterList
+    function ParamsByNameToValue(AName: string; AValue: AnsiString): Integer; overload;
+    function ParamsByNameToValue(AName: string; AValue: string): Integer; overload;
+    function ParamsByNameToValue(AName: string; AValue: Integer): Integer; overload;
+    function ParamsByNameToValue(AName: string; AValue: Double): Integer; overload;
+    function ParamsByNameToValue(AName: string; AValue: Boolean): Integer; overload;
+    function ParamsByNameToValue(AName: string; AValue: TDateTime): Integer; overload;
+  end;
+
+  TDBXParameterHelper = class helper for TDBXParameter
+  private
+    function GetAsString: string;
+    procedure SetAsString(const AValue: string);
+    function GetAsAnsiString: AnsiString;
+    procedure SetAsAnsiString(const AValue: AnsiString);
+    function GetAsDouble: Double;
+    procedure SetAsDouble(const AValue: Double);
+    function GetAsInt32: TInt32;
+    procedure SetAsInt32(const AValue: TInt32);
+    function GetAsBoolean: Boolean;
+    procedure SetAsBoolean(const AValue: Boolean);
+    function GetAsDateTime: TDateTime;
+    procedure SetAsDateTime(const AValue: TDateTime);
+  public
+    procedure Clear;
+
+    property AsDouble: Double read GetAsDouble write SetAsDouble;
+    property AsString: string read GetAsString write SetAsString;
+    property AsAnsiString: AnsiString read GetAsAnsiString write SetAsAnsiString;
+    property AsInt32: TInt32 read GetAsInt32 write SetAsInt32;
+    property AsBoolean: Boolean read GetAsBoolean write SetAsBoolean;
+    property AsDateTime: TDateTime read GetAsDateTime write SetAsDateTime;
+  end;
+
   TDBXMSSQLFactory = class
   protected
     FDBXConnection: TDBXConnection;
@@ -50,7 +84,7 @@ type
 implementation
 
 uses
-  SysUtils;
+  SysUtils, SqlTimSt;
 
 // uses DBXDevartSQLServer
 const DEVART_MSSQL_CONNECTION_STRING = ''
@@ -71,54 +105,51 @@ const SET_READ_UNCOMMITTED = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;'
 const SET_MSQUERY_HEAD = SET_NOCOUNT_ON+SET_READ_UNCOMMITTED;
 
 procedure FillDBXParamFromVariable(AParam: TDBXParameter; Variable: Variant);
-var
-  LParam: TDBXParameter;
 begin
-  LParam := AParam;
   case VarType(Variable) and VarTypeMask of  {$REGION 'begin..end'}
     varInteger:begin
-        if not (LParam.DataType=TDBXDataTypes.Int32Type) then LParam.DataType := TDBXDataTypes.Int32Type;
-        LParam.Value.AsInt32 := Variable;
+        if not (AParam.DataType=TDBXDataTypes.Int32Type) then AParam.DataType := TDBXDataTypes.Int32Type;
+        AParam.Value.AsInt32 := Variable;
       end;
     varOleStr, varString, varUString:begin
-        if not (LParam.DataType=TDBXDataTypes.WideStringType) then LParam.DataType := TDBXDataTypes.WideStringType;
-        LParam.Value.AsString := Variable;
+        if not (AParam.DataType=TDBXDataTypes.WideStringType) then AParam.DataType := TDBXDataTypes.WideStringType;
+        AParam.Value.AsString := Variable;
       end;
     varBoolean:begin
-        if not (LParam.DataType=TDBXDataTypes.BooleanType) then LParam.DataType := TDBXDataTypes.BooleanType;
-        LParam.Value.AsBoolean := Variable;
+        if not (AParam.DataType=TDBXDataTypes.BooleanType) then AParam.DataType := TDBXDataTypes.BooleanType;
+        AParam.Value.AsBoolean := Variable;
       end;
     varDouble:begin
-        if not (LParam.DataType=TDBXDataTypes.DoubleType) then LParam.DataType := TDBXDataTypes.DoubleType;
-        LParam.Value.AsDouble := Variable;
+        if not (AParam.DataType=TDBXDataTypes.DoubleType) then AParam.DataType := TDBXDataTypes.DoubleType;
+        AParam.Value.AsDouble := Variable;
       end;
     varDate:begin
-        if not (LParam.DataType=TDBXDataTypes.DateTimeType) then LParam.DataType := TDBXDataTypes.DateTimeType;
-        LParam.Value.AsDateTime := Variable;
+        if not (AParam.DataType=TDBXDataTypes.DateTimeType) then AParam.DataType := TDBXDataTypes.DateTimeType;
+        AParam.Value.AsDateTime := Variable;
       end;
     varSmallint:begin
-        if not (LParam.DataType=TDBXDataTypes.Int16Type) then LParam.DataType := TDBXDataTypes.Int16Type;
-        LParam.Value.AsInt16 := Variable;
+        if not (AParam.DataType=TDBXDataTypes.Int16Type) then AParam.DataType := TDBXDataTypes.Int16Type;
+        AParam.Value.AsInt16 := Variable;
       end;
     varSingle:begin
-        if not (LParam.DataType=TDBXDataTypes.SingleType) then LParam.DataType := TDBXDataTypes.SingleType;
-        LParam.Value.AsSingle := Variable;
+        if not (AParam.DataType=TDBXDataTypes.SingleType) then AParam.DataType := TDBXDataTypes.SingleType;
+        AParam.Value.AsSingle := Variable;
       end;
     varCurrency:begin
-        if not (LParam.DataType=TDBXDataTypes.CurrencyType) then LParam.DataType := TDBXDataTypes.CurrencyType;
-        LParam.Value.AsCurrency := Variable;
+        if not (AParam.DataType=TDBXDataTypes.CurrencyType) then AParam.DataType := TDBXDataTypes.CurrencyType;
+        AParam.Value.AsCurrency := Variable;
       end;
     varShortInt:begin
-        if not (LParam.DataType=TDBXDataTypes.Int8Type) then LParam.DataType := TDBXDataTypes.Int8Type;
-        LParam.Value.AsInt8 := Variable;
+        if not (AParam.DataType=TDBXDataTypes.Int8Type) then AParam.DataType := TDBXDataTypes.Int8Type;
+        AParam.Value.AsInt8 := Variable;
       end;
     varWord:begin
-        if not (LParam.DataType=TDBXDataTypes.UInt16Type) then LParam.DataType := TDBXDataTypes.UInt16Type;
-        LParam.Value.AsUInt16 := Variable;
+        if not (AParam.DataType=TDBXDataTypes.UInt16Type) then AParam.DataType := TDBXDataTypes.UInt16Type;
+        AParam.Value.AsUInt16 := Variable;
       end;
     varInt64:begin
-        if not (LParam.DataType=TDBXDataTypes.Int64Type) then LParam.DataType := TDBXDataTypes.Int64Type;
-        LParam.Value.AsInt64 := Variable;
+        if not (AParam.DataType=TDBXDataTypes.Int64Type) then AParam.DataType := TDBXDataTypes.Int64Type;
+        AParam.Value.AsInt64 := Variable;
       end;
   else
     raise Exception.Create('Invalid Type');
@@ -128,62 +159,13 @@ end;
 procedure FillParams(ASQLCommand: TDBXCommand; args: OleVariant);
 var
   LParamPos: Integer;
-  LParam: TDBXParameter;
 begin
   ASQLCommand.ParseSQL(True);
   //FCommand.Parameters.SetCount((VarArrayHighBound(args, 1) + 1)); // Only set, but it's null!
   if not(VarIsNull(args)) and not(VarIsEmpty(args)) then
     for LParamPos := 0 to (VarArrayHighBound(args, 1)) do
     begin
-      LParam := ASQLCommand.Parameters[LParamPos];
-      case VarType(args[LParamPos]) and VarTypeMask of  {$REGION 'begin..end'}
-        varInteger:begin
-            if not (LParam.DataType=TDBXDataTypes.Int32Type) then LParam.DataType := TDBXDataTypes.Int32Type;
-            LParam.Value.AsInt32 := args[LParamPos];
-          end;
-        varOleStr, varString, varUString:begin
-            if not (LParam.DataType=TDBXDataTypes.WideStringType) then LParam.DataType := TDBXDataTypes.WideStringType;
-            LParam.Value.AsString := args[LParamPos];
-          end;
-        varBoolean:begin
-            if not (LParam.DataType=TDBXDataTypes.BooleanType) then LParam.DataType := TDBXDataTypes.BooleanType;
-            LParam.Value.AsBoolean := args[LParamPos];
-          end;
-        varDouble:begin
-            if not (LParam.DataType=TDBXDataTypes.DoubleType) then LParam.DataType := TDBXDataTypes.DoubleType;
-            LParam.Value.AsDouble := args[LParamPos];
-          end;
-        varDate:begin
-            if not (LParam.DataType=TDBXDataTypes.DateTimeType) then LParam.DataType := TDBXDataTypes.DateTimeType;
-            LParam.Value.AsDateTime := args[LParamPos];
-          end;
-        varSmallint:begin
-            if not (LParam.DataType=TDBXDataTypes.Int16Type) then LParam.DataType := TDBXDataTypes.Int16Type;
-            LParam.Value.AsInt16 := args[LParamPos];
-          end;
-        varSingle:begin
-            if not (LParam.DataType=TDBXDataTypes.SingleType) then LParam.DataType := TDBXDataTypes.SingleType;
-            LParam.Value.AsSingle := args[LParamPos];
-          end;
-        varCurrency:begin
-            if not (LParam.DataType=TDBXDataTypes.CurrencyType) then LParam.DataType := TDBXDataTypes.CurrencyType;
-            LParam.Value.AsCurrency := args[LParamPos];
-          end;
-        varShortInt:begin
-            if not (LParam.DataType=TDBXDataTypes.Int8Type) then LParam.DataType := TDBXDataTypes.Int8Type;
-            LParam.Value.AsInt8 := args[LParamPos];
-          end;
-        varWord:begin
-            if not (LParam.DataType=TDBXDataTypes.UInt16Type) then LParam.DataType := TDBXDataTypes.UInt16Type;
-            LParam.Value.AsUInt16 := args[LParamPos];
-          end;
-        varInt64:begin
-            if not (LParam.DataType=TDBXDataTypes.Int64Type) then LParam.DataType := TDBXDataTypes.Int64Type;
-            LParam.Value.AsInt64 := args[LParamPos];
-          end;
-      else
-        raise Exception.Create('Invalid Type');
-      end;{$ENDREGION}
+      FillDBXParamFromVariable(ASQLCommand.Parameters[LParamPos], args[LParamPos]);
     end;
 end;
 
@@ -360,7 +342,6 @@ function TDBXMSSQLFactory.FillParameters(AParams: TDBXParameterList;
 var
   LItor: Integer;
 begin
-  Result := False;
   try
     for LItor := 0 to AParams.Count-1 do
     begin
@@ -476,6 +457,159 @@ begin
     end;
   end;
   Result := Result + Copy(Text, StartPos - BeginPos + 1, CurPos - StartPos);
+end;
+
+{ TDBXParameterHelper }
+
+procedure TDBXParameterHelper.Clear;
+begin
+  Value.SetNull;
+end;
+
+function TDBXParameterHelper.GetAsAnsiString: AnsiString;
+begin
+  Result := Value.GetAnsiString;
+end;
+
+function TDBXParameterHelper.GetAsBoolean: Boolean;
+begin
+  Result := Value.GetBoolean;
+end;
+
+function TDBXParameterHelper.GetAsDateTime: TDateTime;
+begin
+  Result := Value.AsDateTime;
+end;
+
+function TDBXParameterHelper.GetAsDouble: Double;
+begin
+  Result := Value.GetDouble;
+end;
+
+function TDBXParameterHelper.GetAsInt32: TInt32;
+begin
+  Result := Value.GetInt32;
+end;
+
+function TDBXParameterHelper.GetAsString: string;
+begin
+  Result := Value.GetWideString;
+end;
+
+procedure TDBXParameterHelper.SetAsAnsiString(const AValue: AnsiString);
+begin
+  DataType := TDBXDataTypes.AnsiStringType;
+  Value.SetAnsiString(AValue);
+end;
+
+procedure TDBXParameterHelper.SetAsBoolean(const AValue: Boolean);
+begin
+  DataType := TDBXDataTypes.BooleanType;
+  Value.SetBoolean(AValue);
+end;
+
+procedure TDBXParameterHelper.SetAsDateTime(const AValue: TDateTime);
+begin
+  DataType := TDBXDataTypes.TimeStampType;
+  Value.SetTimeStamp(DateTimeToSQLTimeStamp(AValue));
+end;
+
+procedure TDBXParameterHelper.SetAsDouble(const AValue: Double);
+begin
+  DataType := TDBXDataTypes.DoubleType;
+  Value.SetDouble(AValue);
+end;
+
+procedure TDBXParameterHelper.SetAsInt32(const AValue: TInt32);
+begin
+  DataType := TDBXDataTypes.Int32Type;
+  Value.SetInt32(AValue);
+end;
+
+procedure TDBXParameterHelper.SetAsString(const AValue: string);
+begin
+  DataType := TDBXDataTypes.WideStringType;
+  Value.SetWideString(AValue);
+end;
+
+{ TDBXParameterListHelper }
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName,
+  AValue: string): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsString := AValue;
+  end;
+end;
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName: string;
+  AValue: Integer): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsInt32 := AValue;
+  end;
+end;
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName: string;
+  AValue: Boolean): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsBoolean := AValue;
+  end;
+end;
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName: string;
+  AValue: TDateTime): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsDateTime := AValue;
+  end;
+end;
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName: string;
+  AValue: AnsiString): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsAnsiString := AValue;
+  end;
+end;
+
+function TDBXParameterListHelper.ParamsByNameToValue(AName: string;
+  AValue: Double): Integer;
+var
+  LPos01: Integer;
+begin
+  Result := Count;
+  for LPos01 := 0 to Count-1 do
+  begin
+    if SameText(Parameter[LPos01].Name, AName) then
+       Parameter[LPos01].AsDouble := AValue;
+  end;
 end;
 
 end.
