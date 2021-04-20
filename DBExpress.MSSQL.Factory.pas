@@ -3,7 +3,7 @@ unit DBExpress.MSSQL.Factory;
 interface
 
 uses
-  DBXCommon, Classes, DBXMetaDataProvider, DBXDataExpressMetaDataProvider,
+  DBXCommon, Classes, DBXMetaDataProvider, DBXDataExpressMetaDataProvider, DB,
   DbxMsSql, DBXDynalink, Variants, Generics.Collections, DBXTypedTableStorage;
 
 type
@@ -53,7 +53,6 @@ type
   private
     function DBXGetMetaProvider: TDBXMetaDataProvider;
     function DBXGetTables(const AProvider: TDBXMetaDataProvider): TDBXTablesTableStorage;
-  protected
   public
     /// <summary>
     /// Get Table List, ATableType is DBXMetaDataReader.TDBXTableType, have Table, View, Synonym, SystemTable and SystemView
@@ -361,102 +360,18 @@ end;
 { TDBXCommandHelper }
 
 function TDBXCommandHelper.ParseSQL(DoCreate: Boolean): string;
-
-  function NameDelimiter(CurChar: Char): Boolean;
-  begin
-    case CurChar of
-      ' ', ',', ';', ')', #13, #10:
-        Result := True;
-    else
-      Result := False;
-    end;
-  end;
-
 var
-  LiteralChar, CurChar: Char;
-  CurPos, StartPos, BeginPos, NameStart: PChar;
-  Name: string;
-  LParam: TDBXParameter;
+  LParams: TParams;
+  LParamPos: Integer;
 begin
-  Result := '';
-
-  if DoCreate then
-    Parameters.ClearParameters;
-
-  StartPos := PChar(Text);
-  BeginPos := StartPos;
-  CurPos := StartPos;
-  while True do
+  LParams := TParams.Create();
+  Result := LParams.ParseSQL(Text, DoCreate);
+  for LParamPos := 0 to LParams.Count-1 do
   begin
-    // Fast forward
-    while True do
-    begin
-      case CurPos^ of
-        #0, ':', '''', '"', '`':
-          Break;
-      end;
-      Inc(CurPos);
-    end;
-
-    case CurPos^ of
-      #0: // string end
-        Break;
-      '''', '"', '`': // literal
-        begin
-          LiteralChar := CurPos^;
-          Inc(CurPos);
-          // skip literal, escaped literal chars must not be handled because they
-          // end the string and start a new string immediately.
-          while (CurPos^ <> #0) and (CurPos^ <> LiteralChar) do
-            Inc(CurPos);
-          if CurPos^ = #0 then
-            Break;
-          Inc(CurPos);
-        end;
-      ':': // parameter
-        begin
-          Inc(CurPos);
-          if CurPos^ = ':' then
-            Inc(CurPos) // skip escaped ":"
-          else
-          begin
-            Result := Result + Copy(Text, StartPos - BeginPos + 1, CurPos - StartPos - 1) + '?';
-
-            LiteralChar := #0;
-            case CurPos^ of
-              '''', '"', '`':
-                begin
-                  LiteralChar := CurPos^;
-                  Inc(CurPos);
-                end;
-            end;
-            NameStart := CurPos;
-
-            CurChar := CurPos^;
-            while CurChar <> #0 do
-            begin
-              if (CurChar = LiteralChar) or
-                  ((LiteralChar = #0) and NameDelimiter(CurChar)) then
-                Break;
-              Inc(CurPos);
-              CurChar := CurPos^;
-            end;
-            SetString(Name, NameStart, CurPos - NameStart);
-            if LiteralChar <> #0 then
-              Inc(CurPos);
-            if DoCreate then
-            begin
-              LParam := CreateParameter;
-              LParam.Name := Name;
-              Parameters.AddParameter(LParam);
-            end;
-
-            StartPos := CurPos;
-          end;
-        end;
-    end;
+    with CreateParameter do
+      Name := LParams[LParamPos].Name;
   end;
-  Result := Result + Copy(Text, StartPos - BeginPos + 1, CurPos - StartPos);
+  FreeAndNil(LParams);
 end;
 
 { TDBXParameterHelper }
