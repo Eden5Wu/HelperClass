@@ -191,7 +191,7 @@ begin
   Cmd := GetConnection.CreateCommand;
   try
     Cmd.Text := ASQL;
-    Cmd.Prepare;
+    Cmd.ParseSQL(True); //Cmd.Prepare;
   except
     FreeAndNil(Cmd);
     raise;
