@@ -2,7 +2,7 @@ unit DBExpress.MSSQL.Factory;
 
 interface
 
-{$DEFINE USE_DEVART=1}
+{$DEFINE USE_DEVART=0}
 
 uses
   DBXCommon, Classes, DBXMetaDataProvider, DBXDataExpressMetaDataProvider, DB,
@@ -12,6 +12,15 @@ uses
 type
   TDBXCommandHelper = class helper for TDBXCommand
     function ParseSQL(DoCreate: Boolean=True): string;
+    /// <seealso>https://forums.devart.com/viewtopic.php?t=22342</seealso>
+    /// <code>
+    /// DBXPar := DBXCmd.CreateParameter;
+    /// DBXPar.DataType := TDBXDataTypes.BlobType;
+    /// DBXPar.Value.SetStream(TFileStream.Create(sArqXml, fmOpenRead), True);
+    /// DBXPar.Value.ValueType.ValueTypeFlags := DBXPar.Value.ValueType.ValueTypeFlags or TDBXValueTypeFlags.ExtendedType;
+    ///
+    /// DBXCmd.Parameters.AddParameter(DBXPar);
+    /// </code>
     function CreateBlobParameter: TDBXParameter;
   end;
 
