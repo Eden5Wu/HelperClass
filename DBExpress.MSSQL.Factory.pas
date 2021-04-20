@@ -8,7 +8,7 @@ uses
 
 type
   TDBXCommandHelper = class helper for TDBXCommand
-    function ParseSQL(DoCreate: Boolean): string;
+    function ParseSQL(DoCreate: Boolean=True): string;
   end;
 
   TDBXParameterListHelper = class helper for TDBXParameterList
@@ -359,7 +359,7 @@ end;
 
 { TDBXCommandHelper }
 
-function TDBXCommandHelper.ParseSQL(DoCreate: Boolean): string;
+function TDBXCommandHelper.ParseSQL(DoCreate: Boolean=True): string;
 var
   LParams: TParams;
   LParamPos: Integer;
