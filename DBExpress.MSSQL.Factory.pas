@@ -2,13 +2,17 @@ unit DBExpress.MSSQL.Factory;
 
 interface
 
+{$DEFINE USE_DEVART=1}
+
 uses
   DBXCommon, Classes, DBXMetaDataProvider, DBXDataExpressMetaDataProvider, DB,
-  DbxMsSql, DBXDynalink, Variants, Generics.Collections, DBXTypedTableStorage;
+  {$IFDEF USE_DEVART} DBXDevartSQLServer, {$ELSE} DbxMsSql, {$ENDIF}
+  DBXDynalink, Variants, Generics.Collections, DBXTypedTableStorage;
 
 type
   TDBXCommandHelper = class helper for TDBXCommand
     function ParseSQL(DoCreate: Boolean=True): string;
+    function CreateBlobParameter: TDBXParameter;
   end;
 
   TDBXParameterListHelper = class helper for TDBXParameterList
@@ -210,7 +214,12 @@ begin
   inherited Create;
 
   FConnectionProps := TDBXProperties.Create;
-  FConnectionProps.SetProperties(Format(MSSQL_CONNECTION_STRING,
+  FConnectionProps.SetProperties(Format(
+    {$IFDEF USE_DEVART}
+      DEVART_MSSQL_CONNECTION_STRING,
+    {$ELSE}
+      MSSQL_CONNECTION_STRING,
+    {$ENDIF}
                         [TDBXPropertyNames.DriverName,
                          TDBXPropertyNames.HostName, AHostName,
                          TDBXPropertyNames.Database, ADatabase,
@@ -358,6 +367,13 @@ begin
 end;
 
 { TDBXCommandHelper }
+
+function TDBXCommandHelper.CreateBlobParameter: TDBXParameter;
+begin
+  Result := TDBXParameter.Create(FDbxContext);
+  Result.DataType := TDBXDataTypes.BlobType;
+  Result.ValueTypeFlags := Result.ValueTypeFlags or TDBXValueTypeFlags.ExtendedType;
+end;
 
 function TDBXCommandHelper.ParseSQL(DoCreate: Boolean=True): string;
 var
