@@ -3,7 +3,8 @@ unit DBExpress.MSSQL.Factory;
 interface
 
 uses
-  DBXCommon, Classes, DBXMetaDataProvider, DBXDataExpressMetaDataProvider, DB,
+  DBXCommon, Classes, SqlExpr,
+  DBXMetaDataProvider, DBXDataExpressMetaDataProvider, DB,
   DbxMsSql,
   DBXDynalink, Variants, Generics.Collections, DBXTypedTableStorage;
 
@@ -79,6 +80,9 @@ type
     function PrepareMSQuery(ASQL: string): TDBXCommand;
 
     property ConnectionProps: TDBXProperties read FConnectionProps;
+
+    class function OleDBConnectionStringToDBX(AConnection: TSQLConnection;
+      AOleDBConnectionString: string): Boolean;
   end;
 
 implementation
@@ -276,8 +280,9 @@ begin
   FreeAndNil(FConnectionProps);
   if Assigned(FDBXConnection) then
   begin
-    if FDBXConnection.IsOpen then
-      FDBXConnection.Close;
+    // Can cause problems for some drivers like the dynalinks to close twice.
+    //if FDBXConnection.IsOpen then
+    //  FDBXConnection.Close;
     FreeAndNil(FDBXConnection);
   end;
   inherited;
@@ -314,6 +319,41 @@ begin
   if FDBXConnection = nil then
     FDBXConnection := FConnectionFactory.GetConnection(FConnectionProps);
   Result := FDBXConnection;
+end;
+
+class function TDBXMSSQLFactory.OleDBConnectionStringToDBX(
+  AConnection: TSQLConnection; AOleDBConnectionString: string): Boolean;
+var
+  LParams: TStrings;
+begin
+  LParams := TStringList.Create;
+  ExtractStrings([';'], [' '], PChar(AOleDBConnectionString), LParams);
+
+  AConnection.Params.Clear;
+  AConnection.DriverName := 'MSSQL';
+  AConnection.GetDriverFunc := 'getSQLDriverMSSQL';
+  AConnection.LibraryName := 'dbxmss.dll';
+  AConnection.VendorLib := 'sqlncli10.dll';
+  AConnection.Params.Clear;
+  AConnection.Params.Values[TDBXPropertyNames.SchemaOverride] := '%.dbo';
+  AConnection.Params.Values[TDBXPropertyNames.DriverName] := 'MSSQL';
+  AConnection.Params.Values[TDBXPropertyNames.HostName] := IfThen(LParams.Values['Server']='', LParams.Values['Data Source'], LParams.Values['Server']);
+  AConnection.Params.Values[TDBXPropertyNames.Database] := IfThen(LParams.Values['Database']='', LParams.Values['Initial Catalog'], LParams.Values['Database']);
+  AConnection.Params.Values[TDBXPropertyNames.UserName] := IfThen(LParams.Values['uid']='', LParams.Values['User ID'], LParams.Values['uid']);
+  AConnection.Params.Values[TDBXPropertyNames.Password] := IfThen(LParams.Values['pwd']='', LParams.Values['Password'], LParams.Values['pwd']);
+  AConnection.Params.Values[TDBXPropertyNames.MaxBlobSize] := '-1';
+  AConnection.Params.Values[TDBXPropertyNames.ErrorResourceFile] := '';
+  AConnection.Params.Values[TDBXDynalinkPropertyNames.LocaleCode] := '0000';
+  AConnection.Params.Values[TDBXPropertyNames.IsolationLevel] := 'ReadCommitted';
+  AConnection.Params.Values['OS Authentication'] := 'False';
+  AConnection.Params.Values['Prepare SQL'] := 'True';
+  AConnection.Params.Values['ConnectTimeout'] := '60';
+  AConnection.Params.Values['Mars_Connection'] := 'False';
+  try
+    AConnection.Open;
+  finally
+    FreeAndNil(LParams);
+  end;
 end;
 
 function TDBXMSSQLFactory.Execute(ASQLCommand: TDBXCommand;
