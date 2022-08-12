@@ -76,7 +76,7 @@ begin
 
   LJObj := TJSONObject.Create;
   try
-    if LJObj.Parse(TFile.ReadAllBytes(AFileName), 0) > 0 then
+    if LJObj.Parse(TFile.ReadAllBytes(AFileName), 0) >= 0 then
     begin
       TDBXJSONTools.JsonToObj(LJObj, Self);
     end;
