@@ -1,3 +1,7 @@
+{
+  Reference from:
+  https://blogs.embarcadero.com/this-is-how-to-store-cross-platform-app-settings-in-json/#Delphi_developers_are_spoiled_for_choice_when_it_comes_to_using_JSON
+}
 program EdenProg;
 
 uses
