@@ -27,9 +27,15 @@ type
     function AsJsonObject: TJSONObject;
     function AsJsonArray: TJSONArray;
     function AsVariant: Variant;
+    function AsDateTime: TDateTime;
   end;
 
   TJSONObjectHelper = class helper for TJSONObject
+  private
+    {$IF CompilerVersion < 28}
+    function GetJsonPair(AIndex: Integer): TJSONPair;
+    {$IFEND}
+  public
     /// <summary> Returns a JSON pair based on the pair string part.
     ///  The search is case sensitive and it returns the fist pair with string part matching the argument </summary>
     /// <param name="APairName">- string: the  pair string part</param>
@@ -44,6 +50,12 @@ type
     function GetVariant(const Name: string): Variant;
     function GetValueToJO(const Name: string): TJSONObject;
     function GetValueToJA(const Name: string): TJSONArray;
+
+
+    {$IF CompilerVersion < 28}
+    function Count(): Integer;
+    property Pairs[AIndex: Integer]: TJSONPair read GetJsonPair;
+    {$IFEND}
   end;
 {$IF CompilerVersion < 28}
   TJSONArrayHelper = class helper for TJSONArray
@@ -90,42 +102,13 @@ type
     class function TableToJSONB(const Value: TDBXReader; const RowCount: Integer=-1; const IsLocalConnection: Boolean=True; const RecNo: Integer=1): TJSONObject; static;
   end;
 
-{$IF CompilerVersion < 28}
-  function DateToISO8601(const ADate: TDateTime; AInputIsUTC: Boolean = True): string;
-{$IFEND}
-
 implementation
 
 uses
-  DateUtils, DBXDBReaders, DBXPlatform, DBXCommonResStrs, Math;
+  Windows, DateUtils, DBXDBReaders, DBXPlatform, DBXCommonResStrs, Math,
+  XSBuiltIns;
 
 const TABLE_PAIR = 'table';
-
-{$IF CompilerVersion < 28}
-function DateToISO8601(const ADate: TDateTime; AInputIsUTC: Boolean = True): string;
-const
-  SDateFormat: string = 'yyyy''-''mm''-''dd''T''hh'':''nn'':''ss''.''zzz''Z'''; { Do not localize }
-  SOffsetFormat: string = '%s%s%.02d:%.02d'; { Do not localize }
-  Neg: array[Boolean] of string = ('+', '-'); { Do not localize }
-var
-  Bias: Integer;
-  TimeZone: TTimeZone;
-begin
-  Result := FormatDateTime(SDateFormat, ADate);
-  if not AInputIsUTC then
-  begin
-    TimeZone := TTimeZone.Local;
-    Bias := Trunc(TimeZone.GetUTCOffset(ADate).Negate.TotalMinutes);
-    if Bias <> 0 then
-    begin
-      // Remove the Z, in order to add the UTC_Offset to the string.
-      SetLength(Result, Length(Result) - 1);
-      Result := Format(SOffsetFormat, [Result, Neg[Bias > 0], Abs(Bias) div MinsPerHour,
-        Abs(Bias) mod MinsPerHour]);
-    end
-  end;
-end;
-{$IFEND}
 
 function DBXToJSONValueEx(const Value: TDBXValue; const DataType: Integer;
   const IsLocalConnection: Boolean): TJSONValue;
@@ -173,7 +156,7 @@ begin
         Result := TJSONString.Create(FormatDateTime('yyyy-mm-dd',Value.AsDateTime));
       TDBXDataTypes.TimeStampType,
       TDBXDataTypes.DatetimeType:
-        Result := TJSONString.Create(DateToISO8601(Value.AsDateTime, False));
+        Result := TJSONString.Create(DateTimeToXMLTime(Value.AsDateTime));
       TDBXDataTypes.TableType:
         if IsLocalConnection then
         begin
@@ -254,7 +237,7 @@ begin
         Result := TJSONString.Create(FormatDateTime('yyyy-mm-dd',Value.AsDateTime));
       TDBXDataTypes.TimeStampType,
       TDBXDataTypes.DatetimeType:
-        Result := TJSONString.Create(DateToISO8601(Value.AsDateTime, False));
+        Result := TJSONString.Create(DateTimeToXMLTime(Value.AsDateTime));
       TDBXDataTypes.TableType:
         if IsLocalConnection then
         begin
@@ -559,6 +542,11 @@ begin
   Result := Self as TJSONString;
 end;
 
+function TJSONValueHelper.AsDateTime: TDateTime;
+begin
+  Result := XMLTimeToDateTime(Self.AsJsonString.Value, Pos(SLocalTimeMarker, Self.AsJsonString.Value)=0);
+end;
+
 function TJsonValueHelper.AsVariant: Variant;
 begin
   Result := Unassigned;
@@ -722,7 +710,11 @@ function TJSONObjectHelper.TryFetchValue(const APath: string;
   out AValue: string): Boolean;
 var LValue: TJSONValue;
 begin
+  {$IF CompilerVersion >= 28}
+  LValue := Self.FindValue(APath);
+  {$ELSE}
   LValue := Self.FetchValue(APath);
+  {$IFEND}
   Result := (LValue <> nil) and (not LValue.IsJsonNull);
   if Result then
     AValue := LValue.AsJsonString.Value;
@@ -737,6 +729,13 @@ begin
   else
     Result := LPath.JsonValue;
 end;
+
+{$IF CompilerVersion < 28}
+function TJSONObjectHelper.GetJsonPair(AIndex: Integer): TJSONPair;
+begin
+  Result := Get(AIndex);
+end;
+{$IFEND}
 
 function TJSONObjectHelper.GetValueToJA(const Name: string): TJSONArray;
 var
@@ -763,6 +762,13 @@ begin
   else
     Result := nil;
 end;
+
+{$IF CompilerVersion < 28}
+function TJSONObjectHelper.Count(): Integer;
+begin
+  Result := Self.Size;
+end;
+{$IFEND}
 
 class function TDBXJSONToolsHelper.TableToJSONB(const Value: TDBXReader; const RowCount: Integer;
   const IsLocalConnection: Boolean; const RecNo: Integer): TJSONObject;
