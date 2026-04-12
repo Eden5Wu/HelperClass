@@ -15,6 +15,7 @@ type
     /// Fully compatible with Windows XP and later.
     /// </summary>
     class function EncodeStream(const AStream: TStream): string; static;
+    class function DecodeToStream(const ABase64Str: string; const AOutStream: TStream): Boolean; static;
   end;
 
   // Reference: delphi-rest-client-api
@@ -853,6 +854,44 @@ const
 function CryptBinaryToStringW(pbBinary: PByte; cbBinary: DWORD; dwFlags: DWORD;
   pszString: PWideChar; var pcchString: DWORD): BOOL; stdcall;
   external 'crypt32.dll' name 'CryptBinaryToStringW';
+
+function CryptStringToBinaryW(
+  pszString: PWideChar;
+  cchString: DWORD;
+  dwFlags: DWORD;
+  pbBinary: PByte;
+  var pcbBinary: DWORD;
+  pdwSkip: PDWORD;
+  pdwFlags: PDWORD
+): BOOL; stdcall; external 'crypt32.dll' name 'CryptStringToBinaryW';
+
+class function TEdenBase64.DecodeToStream(const ABase64Str: string;
+  const AOutStream: TStream): Boolean;
+var
+  LBinarySize: DWORD;
+  LBytes: TBytes;
+  LCleanStr: string;
+begin
+  Result := False;
+  LCleanStr := Trim(ABase64Str);
+  if LCleanStr = '' then Exit;
+
+  // 1. 第一次呼叫：取得所需的二進位緩衝區大小
+  LBinarySize := 0;
+  if CryptStringToBinaryW(PWideChar(LCleanStr), Length(LCleanStr),
+     CRYPT_STRING_BASE64, nil, LBinarySize, nil, nil) then
+  begin
+    SetLength(LBytes, LBinarySize);
+    // 2. 第二次呼叫：進行實際解碼
+    if CryptStringToBinaryW(PWideChar(LCleanStr), Length(LCleanStr),
+       CRYPT_STRING_BASE64, @LBytes[0], LBinarySize, nil, nil) then
+    begin
+      AOutStream.WriteBuffer(LBytes[0], LBinarySize);
+      AOutStream.Position := 0;
+      Result := True;
+    end;
+  end;
+end;
 
 class function TEdenBase64.EncodeStream(const AStream: TStream): string;
 var
