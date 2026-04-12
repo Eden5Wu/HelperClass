@@ -6,6 +6,15 @@
 
 此單元特別針對 Embarcadero Delphi 環境，並利用了內建的 JSON 處理庫 (`System.JSON` 或舊版的 `DBXJSON`) 以及資料庫存取元件 (DBX)。
 
+## 支援環境
+
+- **Delphi 版本**：XE1 ~ Delphi 12 Athens（含未來版本）
+- **JSON 框架**：
+  - Delphi XE6 以前：使用 `DBXJSON`
+  - Delphi XE6 及以後：使用 `System.JSON`
+- **資料庫元件**：任何支援 `TDataSet` 的元件（TClientDataSet、TFDMemTable、TADODataSet、FireDAC 等）
+- **作業系統**：Windows（特別優化 Windows XP 相容性）
+
 ## 主要功能
 
 本單元透過 Class Helper 為標準的 JSON 類別和 DBX 工具類別添加了實用的擴充方法：
@@ -42,6 +51,40 @@
     * `DataSetToDJSON(ADataSet: TDataSet; ...)`: 將 `TDataSet` 的內容轉換為 `TJSONObject`，採用 DataSnap "Table Block" 格式（包含元資料和按列組織的數據）。
     * `DataSetRecToJSONObj(ADataSet: TDataSet)`: 將 `TDataSet` 的 *目前* 記錄轉換為 `TJSONObject`。
     * `TableToJSONB(Value: TDBXReader; ...)`: 將 `TDBXReader` 的結果集轉換為 `TJSONObject`，採用 DataSnap "Table Block" 格式（包含一個名為 'table' 的元數據陣列，以及每個欄位名對應一個包含該列所有值的 JSON 陣列）。
+    * **`DJsonToDataSet(AJsonObj: TJSONObject; ADataSet: TDataSet)`**:  
+      **最重要的反向轉換函式**。  
+      將 `DataSetToDJSON` 或 DataSnap "Table Block" 格式的 JSON 還原成 `TDataSet`，並**自動建立欄位定義（FieldDefs）**。
+
+      **支援功能**：
+      - 自動讀取 `table` 元資料並建立對應的欄位型別與長度
+      - 日期時間自動轉換（ISO 8601 格式）
+      - **二進位資料雙模識別**：
+        - `TJSONString`（Base64 字串）→ Blob / BinaryBlob / Memo
+        - `TJSONArray`（Byte Array）→ BytesType（特別適合 SQL Server `rowversion` / timestamp）
+      - 正確處理 `Null` 值
+      - 適用於接收 DataSnap REST Server 回傳的資料、從外部系統匯入 JSON，或離線資料還原
+
+## 二進位資料處理原則（重要）
+
+本單元採用 **混合制（Hybrid）** 策略，以兼顧相容性、可讀性與效能：
+
+| 欄位類型              | JSON 呈現格式     | 原因 |
+|-----------------------|-------------------|------|
+| **大型 Blob**<br>(ftBlob, varbinary(max), 圖片、文件) | Base64 字串 (`TJSONString`) | 節省空間、避免特殊字元問題、適合 REST/網頁傳輸 |
+| **小型 Bytes**<br>(ftBytes, binary, varbinary(n), **rowversion/timestamp**) | JSONArray (`[72, 101, 108, 111]`) | 與標準 DataSnap 完全相容、除錯時易讀、適合 JS Uint8Array |
+
+- `DJsonToDataSet` 已實作**雙模自動識別**，無論 Server 端如何輸出，Client 端都能正確還原。
+- 若你只有新系統（無舊 DataSnap Client），可自行建立純 Base64 版本。
+
+## 注意事項與限制
+
+- `TableToJSONArray`、`DataSetToJSONArray` 不適合超大型資料表（建議萬筆以內）。數十萬筆等超大型資料請改用 Data Converters 或分頁查詢。
+- `TableToJSONB` / `DataSetToDJSON` 採用 **DataSnap Table Block 格式**（含 'table' metadata），這是 DataSnap REST 最常使用的結構。
+- `FetchParamToDBXParameter` 僅提供基礎實作，請根據你的實際 Param 類型調整。
+- Base64 編解碼使用 Windows `crypt32.dll`，在非 Windows 平台需自行替換。
+- 日期時間格式：
+  - Date → `yyyy-mm-dd`
+  - DateTime/TimeStamp → ISO 8601 (XMLTime)
 
 ## 使用方法
 
@@ -147,4 +190,43 @@ begin
   //   end;
   // end;
 
+end;
+```
+### JSON 轉回 DataSet (`DJsonToDataSet`)
+
+這是本單元中最實用的反向轉換函式，能將 **DataSnap Table Block 格式** 的 JSON 還原成 `TDataSet`（包含自動建立欄位定義）。
+
+```delphi
+procedure ExampleDJsonToDataSet;
+var
+  JsonObj: TJSONObject;
+  DataSet: TClientDataSet;   // 或 TFDMemTable、TDataSet 任何後代
+begin
+  // 假設你已經從 Server 端取得 Table Block 格式的 JSON
+  JsonObj := TJSONObject.ParseJSONValue('{"table":[...], "Field1":[...], ...}') as TJSONObject;
+  try
+    DataSet := TClientDataSet.Create(nil);
+    try
+      // 關鍵呼叫：JSON → DataSet
+      TDBXJSONToolsHelper.DJsonToDataSet(JsonObj, DataSet);
+
+      // 使用還原後的 DataSet
+      DataSet.First;
+      while not DataSet.Eof do
+      begin
+        ShowMessage(Format('Field1: %s, Field2: %d', 
+          [DataSet.FieldByName('Field1').AsString, 
+           DataSet.FieldByName('Field2').AsInteger]));
+        DataSet.Next;
+      end;
+
+      // 如果需要再轉回 JSON 驗證
+      // JsonObj2 := TDBXJSONToolsHelper.DataSetToDJSON(DataSet);
+
+    finally
+      DataSet.Free;
+    end;
+  finally
+    JsonObj.Free;
+  end;
 end;
