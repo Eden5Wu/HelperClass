@@ -110,13 +110,14 @@ type
     class function DataSetToDJSON(ADataSet: TDataSet; const RowCount: Integer=-1; const RecNo: Integer=1): TJSONObject; static;
     class function DataSetRecToJSONObj(ADataSet: TDataSet): TJSONObject;
     class function TableToJSONB(const Value: TDBXReader; const RowCount: Integer=-1; const IsLocalConnection: Boolean=True; const RecNo: Integer=1): TJSONObject; static;
+    class procedure DJsonToDataSet(AJsonObj: TJSONObject; ADataSet: TDataSet);
   end;
 
 implementation
 
 uses
   Windows, DateUtils, DBXDBReaders, DBXPlatform, DBXCommonResStrs, Math,
-  XSBuiltIns;
+  XSBuiltIns, Rtti, TypInfo;
 
 const TABLE_PAIR = 'table';
 
@@ -261,7 +262,13 @@ begin
           Result := TDBXJSONTools.TableToJSONB(LReader, High(Integer), IsLocalConnection);
         end;
       TDBXDataTypes.BlobType,
-      TDBXDataTypes.BinaryBlobType,
+      TDBXDataTypes.BinaryBlobType: begin
+        LStream := TDBXStreamValue(Value).GetStream(True);
+        if TDBXStreamValue(Value).IsNull then
+          Result := TJSONNull.Create
+        else
+          Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
+      end;
       TDBXDataTypes.BytesType: begin
         // Reference by : https://stackoverflow.com/questions/3881720/delphi-convert-byte-array-to-string
         // to AnsiString
@@ -376,6 +383,214 @@ begin
   end;
   DBXReader.Close;
   DBXReader.Free;
+end;
+
+class procedure TDBXJSONToolsHelper.DJsonToDataSet(AJsonObj: TJSONObject;
+  ADataSet: TDataSet);
+var
+  LMetaArray: TJSONArray;
+  LFieldArray, LJsonByteArr: TJSONArray;
+  LColArray: TJSONArray;
+  LFieldPair: TJSONPair;
+  LValue: TJSONValue;
+  I, RowIdx, ColIdx, LRowCount, ByteIdx, LByteValue: Integer;
+  LFieldName: string;
+  LDBXType, LSubType, LSize: Integer;
+  LFieldType: TFieldType;
+  LStream: TStream;
+  function GetFieldTypeFromDBX(const ADBXType: Integer; const ASubType: Integer): TFieldType;
+  begin
+    case ADBXType of
+      TDBXDataTypes.Int8Type,
+      TDBXDataTypes.Int16Type,
+      TDBXDataTypes.Int32Type,
+      TDBXDataTypes.UInt16Type,
+      TDBXDataTypes.UInt32Type: Result := ftInteger;
+      TDBXDataTypes.Int64Type,
+      TDBXDataTypes.UInt64Type: Result := ftLargeint;
+      TDBXDataTypes.DoubleType,
+      TDBXDataTypes.SingleType: Result := ftFloat;
+      TDBXDataTypes.CurrencyType: Result := ftCurrency;
+      TDBXDataTypes.BcdType:    Result := ftFMTBcd;
+      TDBXDataTypes.BooleanType: Result := ftBoolean;
+      TDBXDataTypes.AnsiStringType: Result := ftString;
+      TDBXDataTypes.WideStringType: Result := ftWideString;
+      TDBXDataTypes.DateType:     Result := ftDate;
+      TDBXDataTypes.TimeType:     Result := ftTime;
+      TDBXDataTypes.DatetimeType: Result := ftDateTime;
+      TDBXDataTypes.TimeStampType: Result := ftTimeStamp;
+      TDBXDataTypes.BlobType,
+      TDBXDataTypes.BinaryBlobType:
+      begin
+        // 判斷是否為 Memo
+        if ASubType in [TDBXSubDataTypes.MemoSubType, TDBXSubDataTypes.WideMemoSubType] then
+          Result := ftWideMemo
+        else
+          Result := ftBlob; // SQL Server: varbinary(max), image
+      end;
+      TDBXDataTypes.BytesType:  Result := ftBytes; // SQL Server: binary, varbinary(n), rowversion
+    else
+      Result := ftUnknown;
+    end;
+  end;
+  // 內連 (巢狀) 程序：利用 RTTI 動態呼叫 CreateDataSet
+  procedure InternalInvokeCreateDataSet(ADS: TDataSet);
+  var
+    LContext: TRttiContext;
+    LType: TRttiType;
+    LMethod: TRttiMethod;
+  begin
+    LContext := TRttiContext.Create;
+    try
+      LType := LContext.GetType(ADS.ClassType);
+      LMethod := LType.GetMethod('CreateDataSet');
+      // 如果該元件有實作 CreateDataSet 且是 Public 則呼叫它
+      if Assigned(LMethod) then
+        LMethod.Invoke(ADS, []);
+    finally
+      LContext.Free;
+    end;
+  end;
+begin
+  if (AJsonObj = nil) or (ADataSet = nil) then Exit;
+
+  // 1. 取得 Metadata 陣列
+  LMetaArray := AJsonObj.GetValueToJA('table');
+  if LMetaArray = nil then Exit;
+
+  ADataSet.Close;
+  ADataSet.FieldDefs.Clear;
+
+  for I := 0 to LMetaArray.Size - 1 do
+  begin
+    // 注意：這裡 table 裡面每一項都是 JSONArray
+    // 格式：["Name", DataType, SubType, Precision, Size, ...]
+    LFieldArray := LMetaArray.Get(I) as TJSONArray;
+
+    // 依照 TDBXJSONTools 定義的索引取值
+    LFieldName := (LFieldArray.Get(0) as TJSONString).Value;
+
+    // 注意：你的 Helper 只有 AsInt64，建議統一使用 AsInt64
+    LDBXType   := LFieldArray.Get(1).AsJsonNumber.AsInt64;
+
+    LSubType := 0;
+    if LFieldArray.Size > 2 then
+      LSubType := LFieldArray.Get(2).AsJsonNumber.AsInt64;
+
+    LSize := 0;
+    if LFieldArray.Size > 4 then
+      LSize := LFieldArray.Get(4).AsJsonNumber.AsInt64;
+
+    // 呼叫你的轉換邏輯
+    LFieldType := GetFieldTypeFromDBX(LDBXType, LSubType);
+
+    // 建立欄位定義
+    with ADataSet.FieldDefs.AddFieldDef do
+    begin
+      Name := LFieldName;
+      DataType := LFieldType;
+      if LFieldType in [ftString, ftWideString, ftBytes, ftVarBytes] then
+        Size := LSize;
+    end;
+  end;
+
+  InternalInvokeCreateDataSet(ADataSet);
+
+  // 3. 計算資料列數 (找出第一個資料陣列的長度)
+  LRowCount := 0;
+  for I := 0 to AJsonObj.Size - 1 do
+  begin
+    LFieldPair := AJsonObj.Get(I);
+    if (LFieldPair.JsonString.Value <> 'table') and (LFieldPair.JsonValue is TJSONArray) then
+    begin
+      LRowCount := TJSONArray(LFieldPair.JsonValue).Size;
+      Break;
+    end;
+  end;
+
+  // 4. 填入資料
+  if LRowCount > 0 then
+  begin
+    ADataSet.DisableControls;
+    try
+      for RowIdx := 0 to LRowCount - 1 do
+      begin
+        ADataSet.Append;
+        for ColIdx := 0 to ADataSet.FieldCount - 1 do
+        begin
+          LFieldName := ADataSet.Fields[ColIdx].FieldName;
+          LColArray := AJsonObj.GetValueToJA(LFieldName);
+
+          if Assigned(LColArray) then
+          begin
+            LValue := LColArray.Get(RowIdx);
+            // 1. 處理 Null (優先處理)
+            if LValue.IsJsonNull then
+            begin
+              ADataSet.Fields[ColIdx].Clear;
+            end
+
+            // 2. 處理日期 (ISO8601 轉型)
+            else if (ADataSet.Fields[ColIdx].DataType in [ftDate, ftTime, ftDateTime]) and (LValue is TJSONString) then
+            begin
+              ADataSet.Fields[ColIdx].AsDateTime := LValue.AsDateTime;
+            end
+
+            // 3. 處理 Blob 相關欄位
+            else if ADataSet.Fields[ColIdx].IsBlob then
+            begin
+              if ADataSet.Fields[ColIdx].DataType in [ftMemo, ftWideMemo] then
+              begin
+                // 因為 Server 端對 Memo 做了 TDBXDataTypes.WideStringType 轉換
+                // 所以這裡直接當一般字串填入即可，不需要解 Base64
+                ADataSet.Fields[ColIdx].AsString := LValue.AsJsonString.Value;
+              end
+              else
+              begin
+                // 二進制 Blob 路徑
+                LStream := TMemoryStream.Create;
+                try
+                  if LValue is TJSONArray then
+                  begin
+                    // --- 相容傳統 Byte Array [72, 101, 108, 108, 111] ---
+                    LJsonByteArr := LValue as TJSONArray;
+                    for ByteIdx := 0 to LJsonByteArr.Size - 1 do
+                    begin
+                      // 逐位元寫入，雖然較慢但最穩定
+                      LByteValue := StrToInt(LJsonByteArr.Get(ByteIdx).ToString);
+                      LStream.Write(LByteValue, 1);
+                    end;
+                  end
+                  else if LValue is TJSONString then
+                  begin
+                    // --- 相容 Base64 字串 ---
+                    TEdenBase64.DecodeToStream(LValue.AsJsonString.Value, LStream);
+                  end;
+
+                  if LStream.Size > 0 then
+                  begin
+                    LStream.Position := 0;
+                    TBlobField(ADataSet.Fields[ColIdx]).LoadFromStream(LStream);
+                  end;
+                finally
+                  LStream.Free;
+                end;
+              end;
+            end
+            else
+            begin
+              // 一般欄位才用 AsVariant
+              ADataSet.Fields[ColIdx].Value := LValue.AsVariant;
+            end;
+          end;
+        end;
+        ADataSet.Post;
+      end;
+      ADataSet.First;
+    finally
+      ADataSet.EnableControls;
+    end;
+  end;
 end;
 
 class procedure TDBXJSONToolsHelper.FetchParamToDBXParameter(AParam: TParam;
