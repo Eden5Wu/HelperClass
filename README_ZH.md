@@ -78,8 +78,8 @@
 
 ## 注意事項與限制
 
-- `TableToJSONArray`、`DataSetToJSONArray` 不適合超大型資料表（建議萬筆以內）。數十萬筆等超大型資料請改用 Data Converters 或分頁查詢。
-- `TableToJSONB` / `DataSetToDJSON` 採用 **DataSnap Table Block 格式**（含 'table' metadata），這是 DataSnap REST 最常使用的結構。
+- `TableToJSONArray`、`DataSetToJSONArray`：將資料轉成 row-by-row 格式（每個元素為一筆資料的 JSONObject）。適合前端 JS、REST API 或不需要 metadata 的情境。
+- `DataSetToDJSON`、`TableToJSONB`：轉成 DataSnap Table Block 格式（含 metadata 以及每個欄位對應的值陣列）。適合需要完整欄位結構資訊、或與 DataSnap REST 高度相容的場景。
 - `FetchParamToDBXParameter` 僅提供基礎實作，請根據你的實際 Param 類型調整。
 - Base64 編解碼使用 Windows `crypt32.dll`，在非 Windows 平台需自行替換。
 - 日期時間格式：
