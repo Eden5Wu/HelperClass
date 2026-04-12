@@ -1,4 +1,4 @@
-﻿unit EdenDBXJsonHelper;
+unit EdenDBXJsonHelper;
 
 interface
 
@@ -8,6 +8,15 @@ uses
   DB, Variants;
 
 type
+  TEdenBase64 = class
+  public
+    /// <summary>
+    /// Encodes a TStream content to a Base64 string using Win32 API.
+    /// Fully compatible with Windows XP and later.
+    /// </summary>
+    class function EncodeStream(const AStream: TStream): string; static;
+  end;
+
   // Reference: delphi-rest-client-api
   TJSONValueHelper = class helper for TJSONValue
   private
@@ -184,7 +193,8 @@ begin
         if TDBXStreamValue(Value).IsNull then // GetBytes (GetStream裡有用到) 後 IsNull 才會正確，詳見 TDBXByteArrayValue 官方註解
           Result := TJSONNull.Create
         else
-          Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
+          //Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
+          Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
       end
     else
       raise TDBXError.Create(0, Format(SNoConversionToJSON, [TDBXValueType.DataTypeName(DataType)]));
@@ -831,6 +841,65 @@ begin
   if IsLocalConnection then
     Value.Free;
   Result := JTable;
+end;
+
+{ TEdenBase64 }
+
+const
+  CRYPT_STRING_BASE64 = $00000001;
+  CRYPT_STRING_NOCRLF = $40000000;
+
+function CryptBinaryToStringW(pbBinary: PByte; cbBinary: DWORD; dwFlags: DWORD;
+  pszString: PWideChar; var pcchString: DWORD): BOOL; stdcall;
+  external 'crypt32.dll' name 'CryptBinaryToStringW';
+
+class function TEdenBase64.EncodeStream(const AStream: TStream): string;
+var
+  LInput: TBytes;
+  LSize: DWORD;
+  LOutLen: DWORD;
+  LFlags: DWORD;
+  LIsModernOS: Boolean;
+begin
+  Result := '';
+  if (AStream = nil) or (AStream.Size = 0) then Exit;
+
+  // Detect OS version: Returns True for Windows Vista (6.0) or later
+  LIsModernOS := CheckWin32Version(6, 0);
+
+  // Configure flags based on OS capabilities
+  LFlags := CRYPT_STRING_BASE64;
+  if LIsModernOS then
+    LFlags := LFlags or CRYPT_STRING_NOCRLF;
+
+  // 1. Read data from the stream
+  AStream.Position := 0;
+  SetLength(LInput, AStream.Size);
+  AStream.Read(LInput[0], AStream.Size);
+
+  LSize := Length(LInput);
+  LOutLen := 0;
+
+  // 2. First call to determine the required buffer length
+  if CryptBinaryToStringW(@LInput[0], LSize, LFlags, nil, LOutLen) then
+  begin
+    if LOutLen = 0 then
+      Exit;
+
+    // Subtract 1 from LOutLen to exclude the Null terminator (#0) from the Delphi string length
+    SetLength(Result, LOutLen - 1);
+
+    // 3. Second call to perform the actual conversion
+    if CryptBinaryToStringW(@LInput[0], LSize, LFlags, PWideChar(Result), LOutLen) then
+    begin
+      // Windows XP does not support CRYPT_STRING_NOCRLF; manually remove line breaks if on legacy OS
+      if not LIsModernOS then
+        Result := StringReplace(Result, #13#10, '', [rfReplaceAll]);
+
+      // Clean up any trailing whitespace or null characters
+      Result := Trim(Result);
+    end;
+  end;
 end;
 
 end.
