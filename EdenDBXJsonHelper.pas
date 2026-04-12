@@ -269,7 +269,7 @@ begin
         else
           Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
       end;
-      TDBXDataTypes.BytesType: begin
+      TDBXDataTypes.BytesType: begin // 為了相容舊 DataSnap + rowversion 除錯
         // Reference by : https://stackoverflow.com/questions/3881720/delphi-convert-byte-array-to-string
         // to AnsiString
         //SetString(AnsiStr, PAnsiChar(@ByteArray[0]), LengthOfByteArray);
@@ -283,7 +283,7 @@ begin
         if TDBXStreamValue(Value).IsNull then // GetBytes (GetStream裡有用到) 後 IsNull 才會正確，詳見 TDBXByteArrayValue 官方註解
           Result := TJSONNull.Create
         else
-          Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer)); // 保留給舊框架 DataSet 與 JSON 互轉使用
+          Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
       end
     else
       raise TDBXError.Create(0, Format(SNoConversionToJSON, [TDBXValueType.DataTypeName(DataType)]));
