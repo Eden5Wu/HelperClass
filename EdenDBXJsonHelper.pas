@@ -275,7 +275,8 @@ begin
         if TDBXStreamValue(Value).IsNull then // GetBytes (GetStream裡有用到) 後 IsNull 才會正確，詳見 TDBXByteArrayValue 官方註解
           Result := TJSONNull.Create
         else
-          Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
+          //Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
+          Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
       end
     else
       raise TDBXError.Create(0, Format(SNoConversionToJSON, [TDBXValueType.DataTypeName(DataType)]));
