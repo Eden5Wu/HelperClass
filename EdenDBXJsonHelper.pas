@@ -38,6 +38,10 @@ type
     function AsJsonArray: TJSONArray;
     function AsVariant: Variant;
     function AsDateTime: TDateTime;
+
+    {$IF CompilerVersion >= 28} // 確保只有支援 System.JSON 與 AsType<T> 的版本才編譯
+    function ValueOrDefault<T>(const APath: string; const ADefault: T): T;
+    {$IFEND}
   end;
 
   TJSONObjectHelper = class helper for TJSONObject
@@ -855,6 +859,28 @@ begin
   end
   else Result := APath = '';
 end;
+
+{$IF CompilerVersion >= 28}
+function TJSONValueHelper.ValueOrDefault<T>(const APath: string; const ADefault: T): T;
+var
+  LValue: TJSONValue;
+begin
+  // 1. 統一使用 FindValue 來支援 Path 穿透 (與現有 TryFetchValue 邏輯一致)
+  LValue := Self.FindValue(APath);
+
+  // 2. 如果抓不到或是 JsonNull，回傳預設值
+  if (LValue = nil) or LValue.IsJsonNull then
+    Exit(ADefault);
+
+  // 3. 嘗試轉型
+  try
+    Result := LValue.AsType<T>;
+  except
+    // 若轉型失敗（例如字串轉整數），退回預設值
+    Result := ADefault;
+  end;
+end;
+{$IFEND}
 
 {$IF CompilerVersion < 28}
 { TJsonArrayHelper }
