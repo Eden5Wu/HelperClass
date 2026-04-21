@@ -773,8 +773,13 @@ begin
 end;
 
 function TJSONValueHelper.AsDateTime: TDateTime;
+var
+  LDateStr: string;
 begin
-  Result := XMLTimeToDateTime(Self.AsJsonString.Value, Pos(SLocalTimeMarker, Self.AsJsonString.Value)=0);
+  LDateStr := Self.AsJsonString.Value;
+  if (Length(LDateStr) >= 11) and (LDateStr[11] = ' ') then
+    LDateStr[11] := 'T';
+  Result := XMLTimeToDateTime(LDateStr, Pos(SLocalTimeMarker, LDateStr)=0);
 end;
 
 function TJsonValueHelper.AsVariant: Variant;
