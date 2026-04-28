@@ -15,6 +15,7 @@ type
     /// Fully compatible with Windows XP and later.
     /// </summary>
     class function EncodeStream(const AStream: TStream): string; static;
+    class function EncodeCleanStream(const ARawStream: TStream): string;
     class function DecodeToStream(const ABase64Str: string; const AOutStream: TStream): Boolean; static;
   end;
 
@@ -200,7 +201,7 @@ begin
           Result := TJSONNull.Create
         else
           //Result := TDBXJSONTools.StreamToJSON(LStream, 0, High(Integer));
-          Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
+          Result := TJSONString.Create(TEdenBase64.EncodeCleanStream(LStream));
       end
     else
       raise TDBXError.Create(0, Format(SNoConversionToJSON, [TDBXValueType.DataTypeName(DataType)]));
@@ -271,7 +272,7 @@ begin
         if TDBXStreamValue(Value).IsNull then
           Result := TJSONNull.Create
         else
-          Result := TJSONString.Create(TEdenBase64.EncodeStream(LStream));
+          Result := TJSONString.Create(TEdenBase64.EncodeCleanStream(LStream));
       end;
       TDBXDataTypes.BytesType: begin // 為了相容舊 DataSnap + rowversion 除錯
         // Reference by : https://stackoverflow.com/questions/3881720/delphi-convert-byte-array-to-string
@@ -773,13 +774,8 @@ begin
 end;
 
 function TJSONValueHelper.AsDateTime: TDateTime;
-var
-  LDateStr: string;
 begin
-  LDateStr := Self.AsJsonString.Value;
-  if (Length(LDateStr) >= 11) and (LDateStr[11] = ' ') then
-    LDateStr[11] := 'T';
-  Result := XMLTimeToDateTime(LDateStr, Pos(SLocalTimeMarker, LDateStr)=0);
+  Result := XMLTimeToDateTime(Self.AsJsonString.Value, Pos(SLocalTimeMarker, Self.AsJsonString.Value)=0);
 end;
 
 function TJsonValueHelper.AsVariant: Variant;
@@ -1182,6 +1178,82 @@ begin
         Result := StringReplace(Result, #13#10, '', [rfReplaceAll]);
 
       // Clean up any trailing whitespace or null characters
+      Result := Trim(Result);
+    end;
+  end;
+end;
+
+class function TEdenBase64.EncodeCleanStream(const ARawStream: TStream): string;
+const
+  // 常見檔案的特徵碼 (Magic Numbers)
+  MAGIC_BMP: array[0..1] of Byte = ($42, $4D);                 // BM
+  MAGIC_JPG: array[0..1] of Byte = ($FF, $D8);                 // JPEG 開頭
+  MAGIC_PNG: array[0..3] of Byte = ($89, $50, $4E, $47);       // ‰PNG
+  MAGIC_GIF: array[0..3] of Byte = ($47, $49, $46, $38);       // GIF8
+  MAGIC_PDF: array[0..4] of Byte = ($25, $50, $44, $46, $2D);  // %PDF-
+  MAGIC_ZIP: array[0..3] of Byte = ($50, $4B, $03, $04);       // PK.. (包含 DOCX, XLSX 等)
+var
+  Buffer: array[0..511] of Byte;
+  BytesRead: Integer;
+  i: Integer;
+  DataStartPos: Int64;
+  CleanBytes: TBytes;
+  CleanSize: DWORD;
+  LOutLen: DWORD;
+  LFlags: DWORD;
+  LIsModernOS: Boolean;
+begin
+  Result := '';
+  if (ARawStream = nil) or (ARawStream.Size = 0) then Exit;
+
+  // 1. 讀取前 512 Bytes 進行掃描
+  ARawStream.Position := 0;
+  BytesRead := ARawStream.Read(Buffer[0], SizeOf(Buffer));
+  DataStartPos := 0; // 預設為 0，如果都沒找到特徵碼，就當作沒有殼
+
+  // 2. 尋找真實檔案特徵碼
+  for i := 0 to BytesRead - 5 do
+  begin
+    if (Buffer[i] = MAGIC_BMP[0]) and (Buffer[i+1] = MAGIC_BMP[1]) then
+      begin DataStartPos := i; Break; end;
+    if (Buffer[i] = MAGIC_JPG[0]) and (Buffer[i+1] = MAGIC_JPG[1]) then
+      begin DataStartPos := i; Break; end;
+    if (Buffer[i] = MAGIC_PNG[0]) and (Buffer[i+1] = MAGIC_PNG[1]) and (Buffer[i+2] = MAGIC_PNG[2]) and (Buffer[i+3] = MAGIC_PNG[3]) then
+      begin DataStartPos := i; Break; end;
+    if (Buffer[i] = MAGIC_GIF[0]) and (Buffer[i+1] = MAGIC_GIF[1]) and (Buffer[i+2] = MAGIC_GIF[2]) and (Buffer[i+3] = MAGIC_GIF[3]) then
+      begin DataStartPos := i; Break; end;
+    if (Buffer[i] = MAGIC_PDF[0]) and (Buffer[i+1] = MAGIC_PDF[1]) and (Buffer[i+2] = MAGIC_PDF[2]) and (Buffer[i+3] = MAGIC_PDF[3]) and (Buffer[i+4] = MAGIC_PDF[4]) then
+      begin DataStartPos := i; Break; end;
+    if (Buffer[i] = MAGIC_ZIP[0]) and (Buffer[i+1] = MAGIC_ZIP[1]) and (Buffer[i+2] = MAGIC_ZIP[2]) and (Buffer[i+3] = MAGIC_ZIP[3]) then
+      begin DataStartPos := i; Break; end;
+  end;
+
+  // 3. 準備讀取乾淨的資料
+  ARawStream.Position := DataStartPos;
+  CleanSize := ARawStream.Size - DataStartPos;
+
+  if CleanSize = 0 then Exit;
+
+  SetLength(CleanBytes, CleanSize);
+  ARawStream.ReadBuffer(CleanBytes[0], CleanSize);
+
+  // 4. 使用 Win32 API 進行 Base64 編碼 (延續你原本的實作邏輯)
+  LIsModernOS := CheckWin32Version(6, 0);
+  LFlags := CRYPT_STRING_BASE64;
+  if LIsModernOS then
+    LFlags := LFlags or CRYPT_STRING_NOCRLF;
+
+  LOutLen := 0;
+  if CryptBinaryToStringW(@CleanBytes[0], CleanSize, LFlags, nil, LOutLen) then
+  begin
+    if LOutLen = 0 then Exit;
+
+    SetLength(Result, LOutLen - 1);
+
+    if CryptBinaryToStringW(@CleanBytes[0], CleanSize, LFlags, PWideChar(Result), LOutLen) then
+    begin
+      if not LIsModernOS then
+        Result := StringReplace(Result, #13#10, '', [rfReplaceAll]);
       Result := Trim(Result);
     end;
   end;
