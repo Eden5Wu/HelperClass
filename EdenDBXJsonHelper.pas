@@ -15,7 +15,7 @@ type
     /// Fully compatible with Windows XP and later.
     /// </summary>
     class function EncodeStream(const AStream: TStream): string; static;
-    class function EncodeCleanStream(const ARawStream: TStream): string;
+    class function EncodeCleanStream(const ARawStream: TStream): string; static;
     class function DecodeToStream(const ABase64Str: string; const AOutStream: TStream): Boolean; static;
   end;
 
