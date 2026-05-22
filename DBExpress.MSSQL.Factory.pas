@@ -20,6 +20,7 @@ type
     /// DBXCmd.Parameters.AddParameter(DBXPar);
     /// </code>
     function CreateBlobParameter: TDBXParameter;
+    function ExecuteSmartQuery: TDBXReader;
   end;
 
   TDBXParameterHelper = class helper for TDBXParameter
@@ -399,6 +400,16 @@ begin
   Result := TDBXParameter.Create(FDbxContext);
   Result.DataType := TDBXDataTypes.BlobType;
   Result.ValueTypeFlags := Result.ValueTypeFlags or TDBXValueTypeFlags.ExtendedType;
+end;
+
+function TDBXCommandHelper.ExecuteSmartQuery: TDBXReader;
+begin
+  Result := Self.ExecuteQuery;
+  while (Result <> nil) and (Result.ColumnCount = 0) do
+  begin
+    Result.Free;
+    Result := Self.GetNextReader;
+  end;
 end;
 
 { TDBXParameterHelper }
