@@ -415,8 +415,8 @@ begin
     // 1. Catch DBX-specific errors first
     on E: TDBXError do
     begin
-      // When E.ErrorCode is $0065 (101), the actual error details are in E.Message
-      if E.ErrorCode = TDBXErrorCodes.VendorError then
+      // When E.ErrorCode is $0065 (101) or $FFFF, the actual error details are in E.Message
+      if (E.ErrorCode = TDBXErrorCodes.VendorError) or (E.ErrorCode = $FFFF) then
       begin
         raise Exception.Create(Format('Database driver error (Vendor Error)！'#13#10 +
                                     'Detailed Message: %s'#13#10 +
