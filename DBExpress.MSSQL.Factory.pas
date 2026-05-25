@@ -404,11 +404,38 @@ end;
 
 function TDBXCommandHelper.ExecuteSmartQuery: TDBXReader;
 begin
-  Result := Self.ExecuteQuery;
-  while (Result <> nil) and (Result.ColumnCount = 0) do
-  begin
-    Result.Free;
-    Result := Self.GetNextReader;
+  try
+    Result := Self.ExecuteQuery;
+    while (Result <> nil) and (Result.ColumnCount = 0) do
+    begin
+      Result.Free;
+      Result := Self.GetNextReader;
+    end;
+  except
+    // 1. Catch DBX-specific errors first
+    on E: TDBXError do
+    begin
+      // When E.ErrorCode is $0065 (101), the actual error details are in E.Message
+      if E.ErrorCode = TDBXErrorCodes.VendorError then
+      begin
+        raise Exception.Create(Format('Database driver error (Vendor Error)！'#13#10 +
+                                    'Detailed Message: %s'#13#10 +
+                                    'Offending SQL: %s', [E.Message, Self.Text]));
+      end
+      else
+      begin
+        raise Exception.Create(Format('DBX System Error (Code: $%x): %s', [E.ErrorCode, E.Message]));
+      end;
+
+      // 💡 Highly recommended to log the offending SQL syntax to a log file here
+      // LogError(Command.Text, E.Message);
+    end;
+
+    // 2. Catch other unexpected system errors (e.g., memory issues, null pointers, etc.)
+    on E: Exception do
+    begin
+      raise;
+    end;
   end;
 end;
 
