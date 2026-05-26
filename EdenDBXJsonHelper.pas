@@ -72,6 +72,7 @@ type
     function SetVal(const Name: string; Value: Int64): TJSONObject; overload;
     function SetVal(const Name: string; Value: Double): TJSONObject; overload;
     function SetVal(const Name: string; Value: Boolean): TJSONObject; overload;
+    function SetVal(const Name: string; Value: TJSONValue): TJSONObject; overload;
     
     {$IF CompilerVersion < 28}
     function Count(): Integer;
