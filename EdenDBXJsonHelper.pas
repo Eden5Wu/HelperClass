@@ -66,7 +66,12 @@ type
     function GetValueToJO(const Name: string): TJSONObject;
     function GetValueToJA(const Name: string): TJSONArray;
 
-
+    function SetVal(const Name: string; const Value: string): TJSONObject; overload;
+    function SetVal(const Name: string; Value: Integer): TJSONObject; overload;
+    function SetVal(const Name: string; Value: Int64): TJSONObject; overload;
+    function SetVal(const Name: string; Value: Double): TJSONObject; overload;
+    function SetVal(const Name: string; Value: Boolean): TJSONObject; overload;
+    
     {$IF CompilerVersion < 28}
     function Count(): Integer;
     property Pairs[AIndex: Integer]: TJSONPair read GetJsonPair;
@@ -927,6 +932,63 @@ begin
     Result := LPair.JsonValue.AsVariant
   else
     Result := Variants.Null;
+end;
+
+function TJSONObjectHelper.SetVal(const Name, Value: string): TJSONObject;
+var
+  Pair: TJSONPair;
+begin
+  Pair := Self.RemovePair(Name);
+  if Assigned(Pair) then Pair.Free;
+  Self.AddPair(Name, TJSONString.Create(Value));
+  Result := Self; // 為了達成鏈式呼叫回傳 Self
+end;
+
+function TJSONObjectHelper.SetVal(const Name: string;
+  Value: Integer): TJSONObject;
+var
+  Pair: TJSONPair;
+begin
+  Pair := Self.RemovePair(Name);
+  if Assigned(Pair) then Pair.Free;
+  Self.AddPair(Name, TJSONNumber.Create(Value));
+  Result := Self; // 為了達成鏈式呼叫回傳 Self
+end;
+
+function TJSONObjectHelper.SetVal(const Name: string;
+  Value: Int64): TJSONObject;
+var
+  Pair: TJSONPair;
+begin
+  Pair := Self.RemovePair(Name);
+  if Assigned(Pair) then Pair.Free;
+  Self.AddPair(Name, TJSONNumber.Create(Value));
+  Result := Self; // 為了達成鏈式呼叫回傳 Self
+end;
+
+function TJSONObjectHelper.SetVal(const Name: string;
+  Value: Double): TJSONObject;
+var
+  Pair: TJSONPair;
+begin
+  Pair := Self.RemovePair(Name);
+  if Assigned(Pair) then Pair.Free;
+  Self.AddPair(Name, TJSONNumber.Create(Value));
+  Result := Self; // 為了達成鏈式呼叫回傳 Self
+end;
+
+function TJSONObjectHelper.SetVal(const Name: string;
+  Value: Boolean): TJSONObject;
+var
+  Pair: TJSONPair;
+begin
+  Pair := Self.RemovePair(Name);
+  if Assigned(Pair) then Pair.Free;
+  if Value then
+    Self.AddPair(Name, TJSONTrue.Create)
+  else
+    Self.AddPair(Name, TJSONFalse.Create);
+  Result := Self; // 為了達成鏈式呼叫回傳 Self
 end;
 
 function TJSONObjectHelper.TryFetchValue(const APath: string;
