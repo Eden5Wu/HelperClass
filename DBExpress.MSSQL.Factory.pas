@@ -415,12 +415,18 @@ begin
     // 1. Catch DBX-specific errors first
     on E: TDBXError do
     begin
-      // When E.ErrorCode is $0065 (101) or $FFFF, the actual error details are in E.Message
-      if (E.ErrorCode = TDBXErrorCodes.VendorError) or (E.ErrorCode = $FFFF) then
+      // When E.ErrorCode is $FFFF, 實務上 OLE DB 驅動回傳的通用錯誤碼（通常是 SQL 語法或命令錯誤）
+      if E.ErrorCode = $FFFF then
+      begin
+        raise Exception.Create(Format('SQL 語法或資料庫引擎錯誤 (SQL Syntax / Engine Error)!'#13#10 +
+                                      '詳細訊息 (Detailed Message): %s'#13#10 +
+                                      '出錯的 SQL (Offending SQL): %s', [E.Message, Self.Text]));
+      end
+      // When E.ErrorCode is $0065 (101), 符合 DBX 官方規格定義的資料庫廠商原生錯誤
+      else if (E.ErrorCode = TDBXErrorCodes.VendorError) then
       begin
         raise Exception.Create(Format('Database driver error (Vendor Error)！'#13#10 +
-                                    'Detailed Message: %s'#13#10 +
-                                    'Offending SQL: %s', [E.Message, Self.Text]));
+                                    'Detailed Message: %s', [E.Message]));
       end
       else
       begin
