@@ -5,6 +5,7 @@ interface
 uses
   DBXCommon, SysUtils, DBXJSONCommon, Classes,
   {$IF CompilerVersion >= 28} System.JSON {$ELSE} DBXJSON {$IFEND},
+  {$IF CompilerVersion >= 29} System.JSON.Writers, System.JSON.Types, {$IFEND} // XE8+
   DB, Variants;
 
 type
@@ -67,13 +68,14 @@ type
     function GetValueToJO(const Name: string): TJSONObject;
     function GetValueToJA(const Name: string): TJSONArray;
 
+
     function SetVal(const Name: string; const Value: string): TJSONObject; overload;
     function SetVal(const Name: string; Value: Integer): TJSONObject; overload;
     function SetVal(const Name: string; Value: Int64): TJSONObject; overload;
     function SetVal(const Name: string; Value: Double): TJSONObject; overload;
     function SetVal(const Name: string; Value: Boolean): TJSONObject; overload;
     function SetVal(const Name: string; Value: TJSONValue): TJSONObject; overload;
-    
+
     {$IF CompilerVersion < 28}
     function Count(): Integer;
     property Pairs[AIndex: Integer]: TJSONPair read GetJsonPair;
@@ -102,22 +104,46 @@ type
   TDBXJSONToolsHelper = class helper for TDBXJSONTools
   public
     class procedure FetchParamToDBXParameter(AParam: TParam; ADBXParameter: TDBXParameter);
-    /// <summary> Creates the JSON equivalent of a DBX table. The result is suitable for asynchronous
+    /// <summary> Creates a JSON array (TJSONArray) compatible with JavaScript libraries from a TDBXReader.
     /// </summary>
-    /// <remarks> The result is suitable for asynchronous
-    ///  calls and should not be used for large table. It is recommended use of Data Converters
-    ///  if the table is expected to be large
-    ///
-    ///  The caller assumes JSON object ownership
-    ///
+    /// <remarks> This method builds a full DOM tree in memory, which is suitable for small to medium-sized datasets.
+    ///  For handling large datasets, it is highly recommended to use TableToJSONWriter (streaming mode)
+    ///  to achieve significantly better memory efficiency.
+    ///  The caller assumes ownership of the returned JSON array.
     /// </remarks>
-    /// <param name="value">DBXReader object, never null</param>
-    /// <param name="RowCount">Set result records</param>
-    /// <param name="isLocalConnection">true if the connection is in-process, dictates memory ownership policy</param>
-    /// <param name="RecNo">Set TDataSet.RecNo</param>
-    /// <returns>JSON equivalent</returns>
+    /// <param name="Value">The source TDBXReader object.</param>
+    /// <param name="RowCount">The maximum number of records to include. Use -1 for all remaining records.</param>
+    /// <param name="IsLocalConnection">If True, the function will automatically free the Value (Reader) after execution.</param>
+    /// <param name="RecNo">The starting record index (1-based) to begin the conversion.</param>
+    /// <returns>A TJSONArray containing the record data.</returns>
     class function TableToJSONArray(const Value: TDBXReader; const RowCount: Integer=-1; const IsLocalConnection: Boolean=True; const RecNo: Integer=1): TJSONArray; static;
     class function TableRecToJSONObj(const Value: TDBXReader; const RecNo: Integer = 1; const IsLocalConnection: Boolean=True): TJSONObject; static;
+
+    {$IF CompilerVersion >= 29}
+    /// <summary> Directly writes TDBXReader content to TJsonTextWriter using Forward-only streaming.
+    /// </summary>
+    /// <remarks> This is the highest performance translation method. It writes data directly to the underlying stream
+    ///  without creating any JSON nodes (DOM) in memory, making memory usage independent of data size.
+    ///  Suitable for large-scale data export or Web API responses with large datasets.
+    /// </remarks>
+    /// <param name="AReader">The source TDBXReader object.</param>
+    /// <param name="AWriter">The target TJsonTextWriter.</param>
+    /// <param name="ARowCount">Number of records to translate. Use -1 for all remaining records.</param>
+    class procedure TableToJSONWriter(const AReader: TDBXReader; const AWriter: TJsonTextWriter; const ARowCount: Integer = -1); static;
+
+    /// <summary> Converts TDBXReader content to a JSON formatted string.
+    /// </summary>
+    /// <remarks> Internally uses TableToJSONWriter for translation, providing a balance of high performance and ease of use.
+    ///  Returns a complete JSON array string.
+    ///  Note: For extremely large datasets, the returned string may consume significant memory.
+    ///  In web environments handling tens of thousands of records, using TableToJSONWriter directly is recommended.
+    /// </remarks>
+    /// <param name="AReader">The source TDBXReader object.</param>
+    /// <param name="ARowCount">Number of records to translate. Use -1 for all remaining records.</param>
+    /// <returns>A JSON formatted string.</returns>
+    class function TableToJSONText(const AReader: TDBXReader; const ARowCount: Integer = -1): string; static;
+    {$IFEND}
+
     class function DataSetToJSONArray(ADataSet: TDataSet; const RowCount: Integer=-1; const RecNo: Integer=1): TJSONArray;
     class function DataSetToDJSON(ADataSet: TDataSet; const RowCount: Integer=-1; const RecNo: Integer=1): TJSONObject; static;
     class function DataSetRecToJSONObj(ADataSet: TDataSet): TJSONObject;
@@ -1143,6 +1169,137 @@ begin
     Value.Free;
   Result := JTable;
 end;
+
+{$IF CompilerVersion >= 29}
+class procedure TDBXJSONToolsHelper.TableToJSONWriter(const AReader: TDBXReader;
+  const AWriter: TJsonTextWriter; const ARowCount: Integer);
+var
+  LColIndex: Integer;
+  LRowsLeft: Integer;
+  LDataType: Integer;
+  LStream: TStream;
+  LByteArr: TBytes;
+  LByteIdx: Integer;
+begin
+  if AReader = nil then
+  begin
+    AWriter.WriteStartArray;
+    AWriter.WriteEndArray;
+    Exit;
+  end;
+
+  if ARowCount = -1 then
+    LRowsLeft := High(Integer)
+  else
+    LRowsLeft := ARowCount;
+
+  AWriter.WriteStartArray;
+
+  while AReader.Next and (LRowsLeft > 0) do
+  begin
+    AWriter.WriteStartObject;
+
+    for LColIndex := 0 to AReader.ColumnCount - 1 do
+    begin
+      AWriter.WritePropertyName(AReader.ValueType[LColIndex].Name);
+
+      if AReader.Value[LColIndex].IsNull then
+      begin
+        AWriter.WriteNull;
+        Continue;
+      end;
+
+      LDataType := AReader.ValueType[LColIndex].DataType;
+
+      case LDataType of
+        TDBXDataTypes.Int8Type, TDBXDataTypes.Int16Type, TDBXDataTypes.Int32Type,
+        TDBXDataTypes.UInt16Type, TDBXDataTypes.UInt32Type:
+          AWriter.WriteValue(AReader.Value[LColIndex].AsInt32);
+
+        TDBXDataTypes.Int64Type, TDBXDataTypes.UInt64Type:
+          AWriter.WriteValue(AReader.Value[LColIndex].AsInt64);
+
+        TDBXDataTypes.DoubleType, TDBXDataTypes.CurrencyType,
+        TDBXDataTypes.BcdType, TDBXDataTypes.SingleType:
+          AWriter.WriteValue(AReader.Value[LColIndex].AsDouble);
+
+        TDBXDataTypes.BooleanType:
+          AWriter.WriteValue(AReader.Value[LColIndex].GetBoolean);
+
+        TDBXDataTypes.DateType:
+          AWriter.WriteValue(FormatDateTime('yyyy-MM-dd', AReader.Value[LColIndex].AsDateTime));
+
+        TDBXDataTypes.TimeStampType, TDBXDataTypes.DatetimeType:
+          AWriter.WriteValue(DateTimeToXMLTime(AReader.Value[LColIndex].AsDateTime));
+
+        TDBXDataTypes.BlobType, TDBXDataTypes.BinaryBlobType:
+          begin
+            if AReader.ValueType[LColIndex].SubType in [TDBXSubDataTypes.MemoSubType, TDBXSubDataTypes.WideMemoSubType] then
+              AWriter.WriteValue(AReader.Value[LColIndex].GetWideString)
+            else
+            begin
+              LStream := TDBXStreamValue(AReader.Value[LColIndex]).GetStream(True);
+              AWriter.WriteValue(TEdenBase64.EncodeCleanStream(LStream));
+            end;
+          end;
+        TDBXDataTypes.BytesType:
+          begin
+            LStream := TDBXStreamValue(AReader.Value[LColIndex]).GetStream(True);
+            if LStream = nil then
+              AWriter.WriteNull
+            else
+            begin
+              AWriter.WriteStartArray;
+              LStream.Position := 0;
+              if LStream.Size > 0 then
+              begin
+                SetLength(LByteArr, LStream.Size);
+                LStream.ReadBuffer(LByteArr[0], LStream.Size);
+                for LByteIdx := 0 to Length(LByteArr) - 1 do
+                  AWriter.WriteValue(Integer(LByteArr[LByteIdx]));
+              end;
+              AWriter.WriteEndArray;
+            end;
+          end;
+        TDBXDataTypes.AnsiStringType:
+          AWriter.WriteValue(string(AReader.Value[LColIndex].GetAnsiString));
+        TDBXDataTypes.WideStringType:
+          AWriter.WriteValue(AReader.Value[LColIndex].GetWideString);
+      else
+        AWriter.WriteValue(AReader.Value[LColIndex].AsString);
+      end;
+    end;
+    AWriter.WriteEndObject;
+    Dec(LRowsLeft);
+  end;
+  AWriter.WriteEndArray;
+end;
+
+class function TDBXJSONToolsHelper.TableToJSONText(const AReader: TDBXReader; const ARowCount: Integer): string;
+var
+  LStringWriter: TStringWriter;
+  LJsonWriter: TJsonTextWriter;
+  LStrBuilder: TStringBuilder;
+begin
+  if AReader = nil then Exit('[]');
+
+  LStrBuilder := TStringBuilder.Create(131072);
+  LStringWriter := TStringWriter.Create(LStrBuilder);
+  try
+    LJsonWriter := TJsonTextWriter.Create(LStringWriter);
+    try
+      LJsonWriter.Formatting := TJsonFormatting.None;
+      TableToJSONWriter(AReader, LJsonWriter, ARowCount);
+      Result := LStrBuilder.ToString;
+    finally
+      LJsonWriter.Free;
+    end;
+  finally
+    LStringWriter.Free;
+    LStrBuilder.Free;
+  end;
+end;
+{$IFEND}
 
 { TEdenBase64 }
 
