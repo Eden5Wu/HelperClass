@@ -1235,7 +1235,7 @@ begin
         TDBXDataTypes.BlobType, TDBXDataTypes.BinaryBlobType:
           begin
             if AReader.ValueType[LColIndex].SubType in [TDBXSubDataTypes.MemoSubType, TDBXSubDataTypes.WideMemoSubType] then
-              AWriter.WriteValue(AReader.Value[LColIndex].GetWideString)
+              AWriter.WriteValue(AReader.Value[LColIndex].AsString) // Read ANSI or Unicode
             else
             begin
               LStream := TDBXStreamValue(AReader.Value[LColIndex]).GetStream(True);
