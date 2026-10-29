@@ -148,6 +148,25 @@ type
     class function DataSetToDJSON(ADataSet: TDataSet; const RowCount: Integer=-1; const RecNo: Integer=1): TJSONObject; static;
     class function DataSetRecToJSONObj(ADataSet: TDataSet): TJSONObject;
     class function TableToJSONB(const Value: TDBXReader; const RowCount: Integer=-1; const IsLocalConnection: Boolean=True; const RecNo: Integer=1): TJSONObject; static;
+    /// <summary>
+    /// 將含有 table Metadata 與各欄資料陣列的 JSON，重建並填入目標 DataSet。
+    /// </summary>
+    /// <param name="AJsonObj">
+    /// 以 table 陣列描述欄位結構，並以欄位名稱對應各欄資料陣列的 JSON 物件；
+    /// 不適用於一般以資料列物件組成的 JSON 陣列。
+    /// </param>
+    /// <param name="ADataSet">
+    /// 接收欄位定義與資料的目標資料集，預期用於 TFDMemTable 或 TClientDataSet。
+    /// 目標必須能透過 RTTI 呼叫無參數的 CreateDataSet，並支援新增與填入資料。
+    /// </param>
+    /// <remarks>
+    /// 用於 Delphi JSON 接收端重建記憶體資料集，不負責將修改寫回資料庫。
+    /// 有效輸入會先關閉目標資料集、清除欄位定義並重新載入，不會合併既有資料。
+    /// 目前為有限還原實作，不保證 FD 與 CDS 之間的欄位結構及資料可無損交換。
+    /// 已知限制包含 Metadata 索引解讀、Memo 分類、Bytes 與 VarBytes 還原、
+    /// 部分日期時間轉換，以及 Precision、Nullable 等欄位屬性未完整套用。
+    /// 轉換失敗可能留下部分資料及編輯狀態，不保證回復原有資料或狀態。
+    /// </remarks>
     class procedure DJsonToDataSet(AJsonObj: TJSONObject; ADataSet: TDataSet);
   end;
 
