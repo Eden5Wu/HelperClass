@@ -885,11 +885,12 @@ begin
   end
   else if Self.IsJsonArray then
   begin
-    if TryStrToInt(APath, LIndex) and (Self.AsJsonArray.Count < LIndex) then
+    Result := False;
+    if TryStrToInt(APath, LIndex) then
     begin
-      Result := Self.AsJsonArray.Items[LIndex] <> nil
-    end
-    else Exit(False);
+      if (LIndex >= 0) and (LIndex < Self.AsJsonArray.Count) then
+        Result := Self.AsJsonArray.Items[LIndex] <> nil;
+    end;
   end
   else Result := APath = '';
 end;
