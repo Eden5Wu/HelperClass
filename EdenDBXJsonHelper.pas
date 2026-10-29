@@ -1016,46 +1016,102 @@ end;
 
 function TJSONObjectHelper.TryFetchValue(const APath: string;
   out AValue: Int64): Boolean;
-var LValue: TJSONValue;
+var
+  LText: string;
+  LInteger: Int64;
+  LNumber, LRounded: Extended;
+  LFormat: TFormatSettings;
 begin
-  LValue := Self.FetchValue(APath);
-  Result := (LValue <> nil) and (LValue.IsJsonNumber);
-  if Result then
-    AValue := Trunc(Math.SimpleRoundTo(LValue.AsJsonNumber.AsDouble, 0));
+  AValue := 0;
+  Result := False;
+  if not Self.TryFetchValue(APath, LText) then Exit;
+  LText := Trim(LText);
+
+  // Parse integers directly to preserve all Int64 digits.
+  if TryStrToInt64(LText, LInteger) then
+  begin
+    AValue := LInteger;
+    Exit(True);
+  end;
+
+  // An overflowing integer must not be retried through floating point.
+  if (Pos('.', LText) = 0) and (Pos('e', LowerCase(LText)) = 0) then Exit;
+
+  LFormat := TFormatSettings.Create;
+  LFormat.DecimalSeparator := '.';
+  LFormat.ThousandSeparator := #0;
+  if not TryStrToFloat(LText, LNumber, LFormat) then Exit;
+  if IsNan(LNumber) or IsInfinite(LNumber) then Exit;
+  if (LNumber < -9223372036854775808.0) or
+     (LNumber >= 9223372036854775808.0) then Exit;
+
+  // Preserve the original SimpleRoundTo(..., 0) conversion for decimals.
+  LRounded := Math.SimpleRoundTo(LNumber, 0);
+  if (LRounded < -9223372036854775808.0) or
+     (LRounded >= 9223372036854775808.0) then Exit;
+  AValue := Trunc(LRounded);
+  Result := True;
 end;
 
 function TJSONObjectHelper.TryFetchValue(const APath: string;
   out AValue: Double): Boolean;
-var LValue: TJSONValue;
+var
+  LText: string;
+  LNumber: Double;
+  LFormat: TFormatSettings;
 begin
-  LValue := Self.FetchValue(APath);
-  Result := (LValue <> nil) and (LValue.IsJsonNumber);
-  if Result then
-    AValue := LValue.AsJsonNumber.AsDouble;
+  AValue := 0;
+  Result := False;
+  if not Self.TryFetchValue(APath, LText) then Exit;
+
+  LFormat := TFormatSettings.Create;
+  LFormat.DecimalSeparator := '.';
+  LFormat.ThousandSeparator := #0;
+  if not TryStrToFloat(LText, LNumber, LFormat) then Exit;
+  if IsNan(LNumber) or IsInfinite(LNumber) then Exit;
+  AValue := LNumber;
+  Result := True;
 end;
 
 function TJSONObjectHelper.TryFetchValue(const APath: string;
   out AValue: Boolean): Boolean;
-var LValue: TJSONValue;
+var
+  LText: string;
 begin
-  LValue := Self.FetchValue(APath);
-  Result := LValue <> nil;
-  if Result then
-    AValue := LValue.IsJsonTrue;
+  AValue := False;
+  Result := False;
+  if not Self.TryFetchValue(APath, LText) then Exit;
+  LText := Trim(LText);
+  if SameText(LText, 'true') then
+  begin
+    AValue := True;
+    Result := True;
+  end
+  else if SameText(LText, 'false') then
+    Result := True;
 end;
 
 function TJSONObjectHelper.TryFetchValue(const APath: string;
   out AValue: string): Boolean;
-var LValue: TJSONValue;
+var
+  LValue: TJSONValue;
 begin
+  AValue := '';
+  Result := False;
   {$IF CompilerVersion >= 28}
   LValue := Self.FindValue(APath);
   {$ELSE}
   LValue := Self.FetchValue(APath);
   {$IFEND}
-  Result := (LValue <> nil) and (not LValue.IsJsonNull);
-  if Result then
-    AValue := LValue.AsJsonString.Value;
+  if LValue = nil then Exit;
+
+  if LValue is TJSONString then
+    AValue := TJSONString(LValue).Value
+  else if LValue.IsJsonNumber or LValue.IsJsonTrue or LValue.IsJsonFalse then
+    AValue := LValue.ToString
+  else
+    Exit;
+  Result := True;
 end;
 
 function TJSONObjectHelper.FetchValue(const APairName: string): TJSONValue;
